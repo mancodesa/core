@@ -3,11 +3,11 @@
 # 	url = ../dictionaries
 # 	branch = .
 #     shallow = true
-# [submodule "helpcontent2"]
-# 	path = helpcontent2
-# 	url = ../help
-# 	branch = .
-#     shallow = true
+[submodule "helpcontent2"]
+ 	path = helpcontent2
+ 	url = ../help
+ 	branch = .
+  shallow = true
 # [submodule "translations"]
 # 	path = translations
 # 	url = ../translations
