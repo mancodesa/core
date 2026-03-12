@@ -116,6 +116,12 @@ void SendFullUpdate(const OUString& nWindowId, const OUString& rWidget)
         pJSWidget->sendFullUpdate();
 }
 
+void SendFullUpdate(weld::Widget& rWidget)
+{
+    if (auto pJSWidget = dynamic_cast<BaseJSWidget*>(&rWidget))
+        pJSWidget->sendFullUpdate(true);
+}
+
 void SendAction(const OUString& nWindowId, const OUString& rWidget,
                 std::unique_ptr<ActionDataMap> pData)
 {
@@ -238,6 +244,14 @@ bool ExecuteAction(const OUString& nWindowId, const OUString& rWidget, const Str
                 else if (sAction == "toggle")
                 {
                     LOKTrigger::trigger_toggled(dynamic_cast<weld::Toggleable&>(*pWidget));
+                    return true;
+                }
+                else if (sAction == "keypress")
+                {
+                    sal_uInt32 nKeyNo = rData.at(u"data"_ustr).toUInt32();
+                    LOKTrigger::trigger_key_press(*pButton, KeyEvent(nKeyNo, vcl::KeyCode(nKeyNo)));
+                    LOKTrigger::trigger_key_release(*pButton,
+                                                    KeyEvent(nKeyNo, vcl::KeyCode(nKeyNo)));
                     return true;
                 }
             }

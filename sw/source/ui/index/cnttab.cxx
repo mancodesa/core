@@ -19,6 +19,7 @@
 
 #include <sal/config.h>
 
+#include <comphelper/scopeguard.hxx>
 #include <osl/diagnose.h>
 #include <o3tl/untaint.hxx>
 #include <sal/log.hxx>
@@ -66,6 +67,8 @@
 #include <chpfld.hxx>
 #include <names.hxx>
 #include <svtools/editbrowsebox.hxx>
+#include <comphelper/lok.hxx>
+#include <vcl/jsdialog/executor.hxx>
 
 #include <cmath>
 #include <memory>
@@ -1592,6 +1595,7 @@ public:
     virtual void set_grid_left_attach(int nPos) override
     {
         m_pParent->get_child_container()->set_child_left_attach(*m_xEntry, nPos);
+        m_pParent->get_child_container()->set_child_top_attach(*m_xEntry, 0);
     }
 
     virtual void get_extents_relative_to(weld::Widget& rRelative, int& x, int& y, int& width, int& height) override
@@ -1716,6 +1720,9 @@ public:
     {
         m_xButton->connect_key_press(LINK(this, SwTOXButton, KeyInputHdl));
         m_xButton->connect_focus_in(LINK(this, SwTOXButton, FocusInHdl));
+        // In LOK mode, clicking a toggle button sends a "toggled" action but
+        // does not trigger VCL focus_in, so also track selection via toggled.
+        m_xButton->connect_toggled(LINK(this, SwTOXButton, ToggledHdl));
         m_xButton->set_tooltip_text(m_pParent->CreateQuickHelp(rToken));
     }
 
@@ -1752,6 +1759,7 @@ public:
     virtual void set_grid_left_attach(int nPos) override
     {
         m_pParent->get_child_container()->set_child_left_attach(*m_xButton, nPos);
+        m_pParent->get_child_container()->set_child_top_attach(*m_xButton, 0);
     }
 
     void get_extents_relative_to(weld::Widget& rRelative, int& x, int& y, int& width, int& height) override
@@ -1766,6 +1774,7 @@ public:
 
     DECL_LINK(KeyInputHdl, const KeyEvent&, bool);
     DECL_LINK(FocusInHdl, weld::Widget&, void);
+    DECL_LINK(ToggledHdl, weld::Toggleable&, void);
 
     bool IsNextControl() const          {return m_bNextControl;}
     void SetPrevNextLink(const Link<SwTOXButton&,void>& rLink) {m_aPrevNextControlLink = rLink;}
@@ -1879,6 +1888,11 @@ IMPL_LINK(SwTOXButton, KeyInputHdl, const KeyEvent&, rKEvt, bool)
 }
 
 IMPL_LINK_NOARG(SwTOXButton, FocusInHdl, weld::Widget&, void)
+{
+    m_aGetFocusLink.Call(*this);
+}
+
+IMPL_LINK_NOARG(SwTOXButton, ToggledHdl, weld::Toggleable&, void)
 {
     m_aGetFocusLink.Call(*this);
 }
@@ -2271,8 +2285,17 @@ void SwTOXEntryTabPage::ActivatePage( const SfxItemSet& /*rSet*/)
             m_xLevelFrame->set_label(m_sLevelStr);
 
         // tdf#135266 - remember last used entry level depending on the index type
-        m_xLevelLB->select(bToxIsIndex ? pTOXDlg->GetWrtShell().GetViewOptions()->GetIdxEntryLvl()
-                                       : pTOXDlg->GetWrtShell().GetViewOptions()->GetTocEntryLvl());
+        {
+            auto nEntryLvl = bToxIsIndex ? pTOXDlg->GetWrtShell().GetViewOptions()->GetIdxEntryLvl()
+                                         : pTOXDlg->GetWrtShell().GetViewOptions()->GetTocEntryLvl();
+            // clamp to valid range - the saved level may exceed the number of
+            // entries when switching between TOX types (e.g. TOC has 10 levels
+            // but Index of Tables has only 1)
+            const int nCount = m_xLevelLB->n_children();
+            if (nCount > 0 && nEntryLvl >= nCount)
+                nEntryLvl = 0;
+            m_xLevelLB->select(nEntryLvl);
+        }
 
 
         //show or hide controls
@@ -2827,6 +2850,8 @@ void SwTokenWindow::SetForm(SwForm& rForm, sal_uInt16 nL, bool bGrabFocus)
     SetActiveControl(nullptr, bGrabFocus);
     m_bValid = true;
 
+    m_xCtrlParentWin->freeze();
+
     if (m_pForm)
     {
         //apply current level settings to the form
@@ -2891,6 +2916,15 @@ void SwTokenWindow::SetForm(SwForm& rForm, sal_uInt16 nL, bool bGrabFocus)
         }
         SetActiveControl(pSetActiveControl, bGrabFocus);
     }
+    m_xCtrlParentWin->thaw();
+
+    // The token widgets were created dynamically above, but the initial
+    // JSDialog full update (sent by the fragment builder's weld_container)
+    // fired before they existed.  Force a new full update so the browser
+    // receives the complete widget tree including all token children.
+    if (comphelper::LibreOfficeKit::isActive())
+        jsdialog::SendFullUpdate(*m_xContainer);
+
     AdjustScrolling();
 }
 
@@ -2987,6 +3021,9 @@ void SwTokenWindow::InsertAtSelection(const SwFormToken& rToken)
 
     if(!m_pActiveCtrl)
         return;
+
+    m_xCtrlParentWin->freeze();
+    comphelper::ScopeGuard aThawGuard([this] { m_xCtrlParentWin->thaw(); });
 
     SwFormToken aToInsertToken(rToken);
 
@@ -3177,6 +3214,12 @@ void SwTokenWindow::InsertAtSelection(const SwFormToken& rToken)
     pButton->Show();
     SetActiveControl(pButton);
 
+    aThawGuard.dismiss();
+    m_xCtrlParentWin->thaw();
+
+    if (comphelper::LibreOfficeKit::isActive())
+        jsdialog::SendFullUpdate(*m_xContainer);
+
     AdjustPositions();
 }
 
@@ -3201,6 +3244,8 @@ void SwTokenWindow::RemoveControl(const SwTOXButton* pDel, bool bInternalCall)
     if (it == m_aControlList.begin() || it == m_aControlList.end() - 1)
         return;
 
+    m_xCtrlParentWin->freeze();
+
     auto itLeft = it, itRight = it;
     --itLeft;
     ++itRight;
@@ -3218,6 +3263,12 @@ void SwTokenWindow::RemoveControl(const SwTOXButton* pDel, bool bInternalCall)
     m_aControlList.erase(it);
 
     SetActiveControl(pLeftEdit);
+
+    m_xCtrlParentWin->thaw();
+
+    if (comphelper::LibreOfficeKit::isActive())
+        jsdialog::SendFullUpdate(*m_xContainer);
+
     AdjustPositions();
     m_aModifyHdl.Call(nullptr);
 }
@@ -3272,12 +3323,14 @@ void SwTokenWindow::AdjustScrolling()
         m_xLeftScrollWin->set_sensitive(nLeft > 0);
         m_xRightScrollWin->set_sensitive(nLeft + nSpace < nWidth);
     }
-    else
+    else if (!comphelper::LibreOfficeKit::isActive())
     {
         //if the control fits into the space then the first control must be at position 0
         m_xRightScrollWin->set_sensitive(false);
         m_xLeftScrollWin->set_sensitive(false);
     }
+    // In LOK mode, VCL layout dimensions may not match browser layout,
+    // so don't disable scroll buttons - the browser determines overflow.
 }
 
 IMPL_LINK(SwTokenWindow, ScrollBtnHdl, weld::Button&, rBtn, void)

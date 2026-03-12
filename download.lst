@@ -370,8 +370,8 @@ FREEHAND_TARBALL := libfreehand-0.1.2.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-FREETYPE_SHA256SUM := 32427e8c471ac095853212a37aef816c60b42052d4d9e48230bab3bdf2936ccc
-FREETYPE_TARBALL := freetype-2.14.1.tar.xz
+FREETYPE_SHA256SUM := 4b62dcab4c920a1a860369933221814362e699e26f55792516d671e6ff55b5e1
+FREETYPE_TARBALL := freetype-2.14.2.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -612,6 +612,11 @@ OFFICEOTRON_JAR := officeotron-0.8.8.jar
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
+VERAPDF_SHA256SUM := bdeef807f7e883fe3ff4e0a4712dc216064ca670d5c857fbc94408266719f0f4
+VERAPDF_JAR := verapdf-cli-1.29.0.jar
+# three static lines
+# so that git cherry-pick
+# will not run into conflicts
 ONLINEUPDATE_SHA256SUM := 37206cf981e8409d048b59ac5839621ea107ff49af72beb9d7769a2f41da8d90
 ONLINEUPDATE_TARBALL := onlineupdate-c003be8b9727672e7d30972983b375f4c200233f-2.tar.xz
 # three static lines
@@ -667,15 +672,15 @@ LIBTIFF_TARBALL := tiff-4.7.1.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-POPPLER_SHA256SUM := dded8621f7b2f695c91063aab1558691c8418374cd583501e89ed39487e7ab77
-POPPLER_TARBALL := poppler-26.02.0.tar.xz
+POPPLER_SHA256SUM := 8b3c5e2a9f2ab4c3ec5029f28af1b433c6b71f0d1e7b3997aa561cf1c0ca4ebe
+POPPLER_TARBALL := poppler-26.03.0.tar.xz
 POPPLER_DATA_SHA256SUM := c835b640a40ce357e1b83666aabd95edffa24ddddd49b8daff63adb851cdab74
 POPPLER_DATA_TARBALL := poppler-data-0.4.12.tar.gz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-POSTGRESQL_SHA256SUM := 695ee29a77be1f5010e10f3667696f29871587f7aa311eadc1f809bea287cf48
-POSTGRESQL_TARBALL := postgresql-15.16.tar.bz2
+POSTGRESQL_SHA256SUM := ae14f24c14727e0b2ded1c5553031666099bd1054db3ef44bfa6e2bd6d554a56
+POSTGRESQL_TARBALL := postgresql-15.17.tar.bz2
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
@@ -730,8 +735,8 @@ SKIA_TARBALL := skia-m142-f4ed99d2443962782cf5f8b4dd27179f131e7cbe.tar.xz
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts
-SQLITE3_SHA256SUM := 6e2a845a493026bdbad0618b2b5a0cf48584faab47384480ed9f592d912f23ec
-SQLITE3_TARBALL := sqlite-amalgamation-3510200.zip
+SQLITE3_SHA256SUM := 45d0fea15971dd1300e5b509f48ca134621e10d9297713b64618fbca21b325fa
+SQLITE3_TARBALL := sqlite-amalgamation-3520000.zip
 # three static lines
 # so that git cherry-pick
 # will not run into conflicts

@@ -7,18 +7,25 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+#include <config_validation.h>
+
 #include <test/unoapi_test.hxx>
 
 #include <com/sun/star/beans/NamedValue.hpp>
 #include <com/sun/star/frame/Desktop.hpp>
 #include <com/sun/star/frame/XStorable.hpp>
+#include <comphelper/lok.hxx>
 #include <comphelper/processfactory.hxx>
 #include <comphelper/propertyvalue.hxx>
 #include <comphelper/sequence.hxx>
+#include <comphelper/sequenceashashmap.hxx>
+#include <o3tl/string_view.hxx>
 #include <osl/file.hxx>
+#include <osl/process.h>
 
 #include <sfx2/app.hxx>
 #include <sfx2/objsh.hxx>
+#include <unotest/getargument.hxx>
 #include <unotools/mediadescriptor.hxx>
 #include <utility>
 
@@ -57,6 +64,9 @@ void UnoApiTest::tearDown()
         mxComponent.clear();
     }
 
+    if (comphelper::LibreOfficeKit::isActive())
+        comphelper::LibreOfficeKit::setActive(false);
+
     test::BootstrapFixture::tearDown();
 }
 
@@ -79,6 +89,192 @@ void UnoApiTest::setTestInteractionHandler(const char* pPassword,
         = rtl::Reference<TestInteractionHandler>(new TestInteractionHandler(sPassword));
     rPropertyValue.Name = "InteractionHandler";
     rPropertyValue.Value <<= css::uno::Reference<task::XInteractionHandler2>(xInteractionHandler);
+}
+
+#if HAVE_EXPORT_VALIDATION
+namespace
+{
+OString loadFile(const OUString& rURL)
+{
+    osl::File aFile(rURL);
+    osl::FileBase::RC eStatus = aFile.open(osl_File_OpenFlag_Read);
+    CPPUNIT_ASSERT_EQUAL(osl::FileBase::E_None, eStatus);
+    sal_uInt64 nSize;
+    aFile.getSize(nSize);
+    std::unique_ptr<char[]> aBytes(new char[nSize]);
+    sal_uInt64 nBytesRead;
+    aFile.read(aBytes.get(), nSize, nBytesRead);
+    CPPUNIT_ASSERT_EQUAL(nSize, nBytesRead);
+    OString aContent(aBytes.get(), nBytesRead);
+
+    return aContent;
+}
+
+constexpr std::u16string_view grand_total = u"Grand total of errors in submitted package: ";
+}
+#endif
+
+void UnoApiTest::validate(TestFilter eFilter)
+{
+    ValidationFormat eFormat = ValidationFormat::ODF;
+    if (eFilter == TestFilter::XLSX)
+        eFormat = ValidationFormat::OOXML;
+    else if (eFilter == TestFilter::DOCX)
+        eFormat = ValidationFormat::OOXML;
+    else if (eFilter == TestFilter::PPTX)
+        eFormat = ValidationFormat::OOXML;
+    else if (eFilter == TestFilter::ODT)
+        eFormat = ValidationFormat::ODF;
+    else if (eFilter == TestFilter::ODS)
+        eFormat = ValidationFormat::ODF;
+    else if (eFilter == TestFilter::ODP)
+        eFormat = ValidationFormat::ODF;
+    else if (eFilter == TestFilter::ODG)
+        eFormat = ValidationFormat::ODF;
+    else if (eFilter == TestFilter::DOC)
+        eFormat = ValidationFormat::MSBINARY;
+    else if (eFilter == TestFilter::XLS)
+        eFormat = ValidationFormat::MSBINARY;
+    else if (eFilter == TestFilter::PPT)
+        eFormat = ValidationFormat::MSBINARY;
+    else if (eFilter == TestFilter::PDF_WRITER)
+        eFormat = ValidationFormat::PDF;
+    else
+    {
+        SAL_INFO("test", "UnoApiTest::validate: unknown filter");
+        return;
+    }
+
+#if HAVE_EXPORT_VALIDATION
+    OUString var;
+    if (eFormat == ValidationFormat::OOXML)
+    {
+        var = "OFFICEOTRON";
+    }
+    else if (eFormat == ValidationFormat::ODF)
+    {
+        var = "ODFVALIDATOR";
+    }
+    else if (eFormat == ValidationFormat::PDF)
+    {
+        var = "VERAPDF";
+    }
+    else if (eFormat == ValidationFormat::MSBINARY)
+    {
+#if HAVE_BFFVALIDATOR
+        var = "BFFVALIDATOR";
+#else
+        // Binary Format Validator is disabled
+        return;
+#endif
+    }
+    OUString aValidator;
+    oslProcessError e = osl_getEnvironment(var.pData, &aValidator.pData);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE(OUString("cannot get env var " + var).toUtf8().getStr(),
+                                 osl_Process_E_None, e);
+    CPPUNIT_ASSERT_MESSAGE(OUString("empty get env var " + var).toUtf8().getStr(),
+                           !aValidator.isEmpty());
+
+    if (eFormat == ValidationFormat::ODF)
+    {
+        // invoke without -e so that we know when something new is written
+        // in loext namespace that isn't yet in the custom schema
+        aValidator
+            += " -M "
+               + m_directories.getPathFromSrc(
+                     u"/schema/libreoffice/OpenDocument-v1.4+libreoffice-manifest-schema.rng")
+               + " -D "
+               + m_directories.getPathFromSrc(
+                     u"/schema/libreoffice/OpenDocument-v1.4+libreoffice-dsig-schema.rng")
+               + " -O "
+               + m_directories.getPathFromSrc(
+                     u"/schema/libreoffice/OpenDocument-v1.4+libreoffice-schema.rng")
+               + " -m " + m_directories.getPathFromSrc(u"/schema/mathml2/mathml2.xsd");
+    }
+
+    utl::TempFileNamed aOutput;
+    aOutput.EnableKillingFile();
+    OUString aOutputFile = aOutput.GetFileName();
+    OUString aCommand = aValidator + " " + maTempFile.GetFileName() + " > " + aOutputFile;
+    if (var != "VERAPDF")
+    {
+        aCommand += " 2>&1";
+    }
+
+#if !defined _WIN32
+    // For now, this is only needed by some Linux ASan builds, so keep it simply and disable it on
+    // Windows (which doesn't support the relevant shell syntax for (un-)setting environment
+    // variables).
+    OUString env;
+    if (test::getArgument(u"env", &env))
+    {
+        auto const n = env.indexOf('=');
+        if (n == -1)
+        {
+            aCommand = "unset -v " + env + " && " + aCommand;
+        }
+        else
+        {
+            aCommand = env + " " + aCommand;
+        }
+    }
+#endif
+
+    SAL_INFO("test", "UnoApiTest::validate: executing '" << aCommand << "'");
+    int returnValue = system(OUStringToOString(aCommand, RTL_TEXTENCODING_UTF8).getStr());
+
+    OString aContentString = loadFile(aOutput.GetURL());
+    OUString aContentOUString = OStringToOUString(aContentString, RTL_TEXTENCODING_UTF8);
+
+    if (eFormat == ValidationFormat::PDF)
+    {
+        if (aContentOUString.indexOf("isCompliant=\"false\"") != -1)
+        {
+            SAL_WARN("test", aContentOUString);
+            CPPUNIT_FAIL("VeraPDF validation failed: document is not compliant");
+        }
+    }
+    else
+    {
+        if (eFormat == ValidationFormat::OOXML && !aContentOUString.isEmpty())
+        {
+            // check for validation errors here
+            sal_Int32 nIndex = aContentOUString.lastIndexOf(grand_total);
+            if (nIndex == -1)
+            {
+                SAL_WARN("test", "no summary line");
+            }
+            else
+            {
+                sal_Int32 nStartOfNumber = nIndex + grand_total.size();
+                std::u16string_view aNumber = aContentOUString.subView(nStartOfNumber);
+                sal_Int32 nErrors = o3tl::toInt32(aNumber);
+                OString aMsg
+                    = "validation error in OOXML export: Errors: " + OString::number(nErrors);
+                if (nErrors)
+                {
+                    SAL_WARN("test", aContentOUString);
+                }
+                CPPUNIT_ASSERT_EQUAL_MESSAGE(aMsg.getStr(), sal_Int32(0), nErrors);
+            }
+        }
+        else if (eFormat == ValidationFormat::ODF && !aContentOUString.isEmpty())
+        {
+            if (aContentOUString.indexOf("Error") != -1 || aContentOUString.indexOf("Fatal") != -1)
+            {
+                SAL_WARN("test", aContentOUString);
+                CPPUNIT_FAIL(aContentString.getStr());
+            }
+        }
+        CPPUNIT_ASSERT_EQUAL_MESSAGE(
+            OString("failed to execute: " + OUStringToOString(aCommand, RTL_TEXTENCODING_UTF8)
+                    + "\n" + OUStringToOString(aContentOUString, RTL_TEXTENCODING_UTF8))
+                .getStr(),
+            0, returnValue);
+    }
+#else
+    (void)eFormat;
+#endif
 }
 
 void UnoApiTest::loadFromURL(OUString const& rURL, const char* pPassword)
@@ -149,11 +345,15 @@ uno::Any UnoApiTest::executeMacro(const OUString& rScriptURL,
     return aRet;
 }
 
-void UnoApiTest::save(TestFilter eFilter, const char* pPassword)
+void UnoApiTest::save(TestFilter eFilter, const uno::Sequence<beans::PropertyValue>& rParams,
+                      const char* pPassword)
 {
     OUString aFilter(TestFilterNames.at(eFilter));
     utl::MediaDescriptor aMediaDescriptor;
     aMediaDescriptor[u"FilterName"_ustr] <<= aFilter;
+
+    if (rParams.hasElements())
+        aMediaDescriptor.update(rParams);
     if (!maFilterOptions.isEmpty())
         aMediaDescriptor[u"FilterOptions"_ustr] <<= maFilterOptions;
 
@@ -172,27 +372,37 @@ void UnoApiTest::save(TestFilter eFilter, const char* pPassword)
                 { u"OOXPassword"_ustr, uno::Any(sPassword) }
             };
             aMediaDescriptor[utl::MediaDescriptor::PROP_ENCRYPTIONDATA] <<= aEncryptionData;
-
-            // validation fails with "zip END header not found"
-            skipValidation();
         }
+
+        // Password protected documents can't be validated
+        skipValidation();
     }
 
-    saveWithParams(aMediaDescriptor.getAsConstPropertyValueList());
+    css::uno::Reference<frame::XStorable> xStorable(mxComponent, css::uno::UNO_QUERY_THROW);
+    xStorable->storeToURL(maTempFile.GetURL(), aMediaDescriptor.getAsConstPropertyValueList());
+
+    if (eFilter == TestFilter::PDF_WRITER)
+    {
+        comphelper::SequenceAsHashMap aFilterData;
+        if (aMediaDescriptor.contains(u"FilterData"_ustr))
+            aFilterData = aMediaDescriptor[u"FilterData"_ustr];
+        bool bPDFUACompliance(
+            aFilterData.getUnpackedValueOrDefault(u"PDFUACompliance"_ustr, false));
+        sal_Int32 nSelectPdfVersion(
+            aFilterData.getUnpackedValueOrDefault(u"SelectPdfVersion"_ustr, sal_Int32(0)));
+        // Only validate PDF/UA, PDF/A-1b, PDF/A-2b or PDF/A-3b
+        if (!bPDFUACompliance && nSelectPdfVersion != 1 && nSelectPdfVersion != 2
+            && nSelectPdfVersion != 3)
+            skipValidation();
+    }
 
     if (!mbSkipValidation)
-        validate(maTempFile.GetFileName(), aFilter);
-}
-
-void UnoApiTest::saveWithParams(const uno::Sequence<beans::PropertyValue>& rParams)
-{
-    css::uno::Reference<frame::XStorable> xStorable(mxComponent, css::uno::UNO_QUERY_THROW);
-    xStorable->storeToURL(maTempFile.GetURL(), rParams);
+        validate(eFilter);
 }
 
 void UnoApiTest::saveAndReload(TestFilter eFilter, const char* pPassword)
 {
-    save(eFilter, pPassword);
+    save(eFilter, /*rParams*/ {}, pPassword);
     loadFromURL(maTempFile.GetURL(), pPassword);
 }
 

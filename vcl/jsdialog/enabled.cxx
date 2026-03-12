@@ -73,6 +73,7 @@ constexpr auto CuiDialogList
         { u"cui/ui/effectspage.ui" },
         { u"cui/ui/eventassigndialog.ui" },
         { u"cui/ui/fontfeaturesdialog.ui" },
+        { u"cui/ui/fontfragment.ui" },
         { u"cui/ui/formatcellsdialog.ui" },
         { u"cui/ui/formatnumberdialog.ui" },
         { u"cui/ui/gradientpage.ui" },
@@ -285,6 +286,9 @@ constexpr auto SwriterDialogList
         { u"modules/swriter/ui/tocentriespage.ui" },
         { u"modules/swriter/ui/tocindexpage.ui" },
         { u"modules/swriter/ui/tocstylespage.ui" },
+        { u"modules/swriter/ui/tokenwidget.ui" },
+        { u"modules/swriter/ui/toxbuttonwidget.ui" },
+        { u"modules/swriter/ui/toxentrywidget.ui" },
         { u"modules/swriter/ui/translationdialog.ui" },
         { u"modules/swriter/ui/watermarkdialog.ui" },
         { u"modules/swriter/ui/wordcount.ui" },
@@ -527,6 +531,7 @@ constexpr auto NotebookbarList
         { u"svx/ui/themeselectorpanel.ui" },
         // not interim builder, but regular builder:
         { u"modules/simpress/ui/masterpagepanelall.ui" },
+        { u"modules/simpress/ui/masterpagepanel.ui" },
         { u"modules/simpress/ui/slidetransitionspanel.ui" }
     });
 

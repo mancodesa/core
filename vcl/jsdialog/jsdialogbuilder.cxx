@@ -156,6 +156,10 @@ void JSInstanceBuilder::initializeDialogSender()
 {
     m_sTypeOfJSON = "dialog";
 
+    // fragment builders (those that never call weld_dialog) must not send close
+    // for the parent dialog - weld_dialog will set m_bCanClose back to true
+    m_bCanClose = false;
+
     vcl::Window* pRoot = m_xBuilder->get_widget_root();
 
     if (pRoot && pRoot->GetParent())
@@ -201,10 +205,6 @@ void JSInstanceBuilder::initializeSidebarSender(sal_uInt64 nLOKWindowId,
 
     if (nLevelsUp > 0)
     {
-        // embedded fragments cannot send close message for whole sidebar
-        if (rUIFile == u"modules/simpress/ui/customanimationfragment.ui")
-            m_bCanClose = false;
-
         m_aContentWindow = pRoot;
         for (unsigned i = 0; i < nLevelsUp && m_aContentWindow; i++)
         {
@@ -447,6 +447,7 @@ std::unique_ptr<weld::Dialog> JSInstanceBuilder::weld_dialog(const OUString& id)
         m_aOwnedToplevel.reset(pDialog);
         m_xBuilder->drop_ownership(pDialog);
         m_bHasTopLevelDialog = true;
+        m_bCanClose = true;
 
         pRet.reset(new JSDialog(this, pDialog, this, false));
 
@@ -475,6 +476,7 @@ std::unique_ptr<weld::Assistant> JSInstanceBuilder::weld_assistant(const OUStrin
         m_aOwnedToplevel.reset(pDialog);
         m_xBuilder->drop_ownership(pDialog);
         m_bHasTopLevelDialog = true;
+        m_bCanClose = true;
 
         pRet.reset(new JSAssistant(this, pDialog, this, false));
 
@@ -503,6 +505,7 @@ std::unique_ptr<weld::MessageDialog> JSInstanceBuilder::weld_message_dialog(cons
         m_aOwnedToplevel.reset(pMessageDialog);
         m_xBuilder->drop_ownership(pMessageDialog);
         m_bHasTopLevelDialog = true;
+        m_bCanClose = true;
 
         initializeSender(GetNotifierWindow(), GetContentWindow(), GetTypeOfJSON());
         m_bSentInitialUpdate = true;
@@ -541,11 +544,11 @@ std::unique_ptr<weld::Container> JSInstanceBuilder::weld_container(const OUStrin
         if (pParent)
             jsdialog::SendFullUpdate(sId, pParent->get_id());
 
+        // nested builders should not close the parent dialog on destroy
+        m_bCanClose = false;
         // Navigator is currently just a panellayout but we treat it as its own dialog in online
-        // this is a hack to get it to close atm but probably need a better solution
-        if (id != u"NavigatorPanel")
-            // this is nested builder, don't close parent dialog on destroy (eg. single tab page is closed)
-            m_bCanClose = false;
+        if (id == u"NavigatorPanel")
+            m_bCanClose = true;
         m_bIsNestedBuilder = true;
     }
 
@@ -1239,11 +1242,22 @@ void JSEntry::do_set_text(const OUString& rText)
     sendUpdate();
 }
 
-void JSEntry::set_text_without_notify(const OUString& rText) { SalInstanceEntry::set_text(rText); }
+void JSEntry::set_text_without_notify(const OUString& rText)
+{
+    disable_notify_events();
+    SalInstanceEntry::do_set_text(rText);
+    enable_notify_events();
+}
 
 void JSEntry::replace_selection(const OUString& rText)
 {
     SalInstanceEntry::replace_selection(rText);
+    sendUpdate();
+}
+
+void JSEntry::set_width_chars(int nChars)
+{
+    SalInstanceEntry::set_width_chars(nChars);
     sendUpdate();
 }
 
@@ -1436,7 +1450,9 @@ void JSFormattedSpinButton::do_set_text(const OUString& rText)
 
 void JSFormattedSpinButton::set_text_without_notify(const OUString& rText)
 {
-    SalInstanceFormattedSpinButton::set_text(rText);
+    disable_notify_events();
+    SalInstanceFormattedSpinButton::do_set_text(rText);
+    enable_notify_events();
 }
 
 JSMessageDialog::JSMessageDialog(JSDialogSender* pSender, ::MessageDialog* pDialog,
@@ -1682,7 +1698,9 @@ void JSTextView::do_set_text(const OUString& rText)
 
 void JSTextView::set_text_without_notify(const OUString& rText)
 {
-    SalInstanceTextView::set_text(rText);
+    disable_notify_events();
+    SalInstanceTextView::do_set_text(rText);
+    enable_notify_events();
 }
 
 void JSTextView::do_replace_selection(const OUString& rText)

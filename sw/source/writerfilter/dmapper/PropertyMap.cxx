@@ -1581,7 +1581,9 @@ void SectionPropertyMap::EmulateSectPrBelowSpacing(DomainMapper_Impl& rDM_Impl)
     // Also, if m_xStartingRange starts with a table (which also doesn't have above spacing)
     // then again the below spacing can be ignored since no consolidation is needed.
     auto pCursor = dynamic_cast<SwXTextCursor*>(m_xStartingRange.get());
-    if (!pCursor || pCursor->GetPaM()->GetPointNode().FindTableNode())
+    if (!pCursor || !pCursor->GetPaM())
+        return;
+    if (pCursor->GetPaM()->GetPointNode().FindTableNode())
         return; // no emulation needed: section starts with a table (i.e. a zero top margin)
 
     SwPaM aPaM(pCursor->GetPaM()->GetPointNode()); // at start of section, contentIndex(0)
@@ -2226,8 +2228,8 @@ void SectionPropertyMap::SetStart( const uno::Reference< text::XTextRange >& xRa
             m_xStartingRange->getText()->createTextCursorByRange(m_xStartingRange), uno::UNO_QUERY_THROW);
         // CAUTION: gotoPreviousParagraph skips over tables,
         // so this range does not necessarily indicate the end of the previous section
-        xPCursor->gotoPreviousParagraph(false);
-        m_xPreStartingRange = xPCursor;
+        if (xPCursor->gotoPreviousParagraph(false))
+            m_xPreStartingRange = xPCursor;
     }
     catch (const uno::Exception&)
     {

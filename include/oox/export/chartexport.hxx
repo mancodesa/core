@@ -184,9 +184,7 @@ private:
                           bool bIsChartex);
     void exportData_chartex( const css::uno::Reference<
                               css::chart::XChartDocument >& rChartDoc);
-    void exportExternalData( const css::uno::Reference<
-                              css::chart::XChartDocument >& rChartDoc,
-                              bool bIsChartex);
+    void exportExternalData(bool bIsChartex);
     void exportLegend( const css::uno::Reference<
                           css::chart::XChartDocument >& rChartDoc,
                           bool bIsChartex);
@@ -238,7 +236,7 @@ private:
     void exportVaryColors(const css::uno::Reference<css::chart2::XChartType>& xChartType);
     void exportCandleStickSeries(
         const css::uno::Sequence<css::uno::Reference<css::chart2::XDataSeries>>& aSeriesSeq,
-        bool& rPrimaryAxes, sal_uInt32& nIdx);
+        bool& rPrimaryAxes);
 
     void exportSeriesText(
         const css::uno::Reference< css::chart2::data::XDataSequence >& xValueSeq, bool bIsChartex );
@@ -283,7 +281,7 @@ private:
         const css::uno::Reference< css::beans::XPropertySet >& xMinorGrid,
         sal_Int32 nAxisType,
         const AxisIdPair& rAxisIdPair);
-    void createAxes(bool bPrimaryAxes, bool bCheckCombinedAxes);
+    void createAxes(bool bPrimaryAxes, bool bCheckCombinedAxes, bool bIsChartex);
     void exportView3D();
     bool isDeep3dChart();
 
@@ -333,6 +331,8 @@ public:
     void InitRangeSegmentationProperties(
         const css::uno::Reference<
             css::chart2::XChartDocument > & xChartDoc );
+
+    OOX_DLLPUBLIC OUString GetExternalDataPath() const;
 };
 
 }

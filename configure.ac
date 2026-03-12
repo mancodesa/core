@@ -4817,7 +4817,6 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
 AC_SUBST(COM_IS_CLANG)
 
 CLANGVER=
-CLANG_16=
 if test "$COM_IS_CLANG" = TRUE; then
     AC_MSG_CHECKING([whether Clang is new enough])
     AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
@@ -4841,19 +4840,15 @@ if test "$COM_IS_CLANG" = TRUE; then
         CLANG_FULL_VERSION=`echo __clang_version__ | $CC $my_args -`
         CLANGVER=`echo $clang_version \
             | $AWK -F. '{ print \$1*10000+(\$2<100?\$2:99)*100+(\$3<100?\$3:99) }'`
-        if test "$CLANGVER" -ge 120000; then
+        if test "$CLANGVER" -ge 180000; then
             AC_MSG_RESULT([yes ($clang_version)])
         else
-            AC_MSG_ERROR(["$CLANG_FULL_VERSION" is too old or unrecognized, must be at least Clang 12])
-        fi
-        if test "$CLANGVER" -ge 160000; then
-            CLANG_16=TRUE
+            AC_MSG_ERROR(["$CLANG_FULL_VERSION" is too old or unrecognized, must be at least Clang 18])
         fi
         AC_DEFINE_UNQUOTED(CLANG_VERSION,$CLANGVER)
         AC_DEFINE_UNQUOTED(CLANG_FULL_VERSION,$CLANG_FULL_VERSION)
     fi
 fi
-AC_SUBST(CLANG_16)
 
 SHOWINCLUDES_PREFIX=
 if test "$_os" = WINNT; then
@@ -5094,11 +5089,7 @@ check_use_ld()
     use_ld_path=${1#*:}
     if test "$use_ld_path" != "$1"; then
         if test "$COM_IS_CLANG" = TRUE; then
-            if test "$CLANGVER" -ge 120000; then
-                use_ld="${use_ld} --ld-path=${use_ld_path}"
-            else
-                use_ld="-fuse-ld=${use_ld_path}"
-            fi
+            use_ld="${use_ld} --ld-path=${use_ld_path}"
         else
             # I tried to use gcc's '-B<path>' and a directory + symlink setup in
             # $BUILDDIR, but libtool always filtered-out that option, so gcc wouldn't
@@ -6208,6 +6199,7 @@ if test "$cross_compiling" = "yes"; then
         bin/bffvalidator.sh.in \
         bin/odfvalidator.sh.in \
         bin/officeotron.sh.in \
+        bin/verapdf.sh.in \
         instsetoo_native/util/openoffice.lst.in \
         config_host/*.in \
         sysui/desktop/macosx/Info.plist.in \
@@ -6701,10 +6693,7 @@ else
     PathFormat "${absolute_path}"
     TARFILE_LOCATION="${formatted_path_unix}"
 fi
-PathFormat "$TARFILE_LOCATION"
-TARFILE_LOCATION_NATIVE="$formatted_path"
 AC_SUBST(TARFILE_LOCATION)
-AC_SUBST(TARFILE_LOCATION_NATIVE)
 
 AC_MSG_CHECKING([whether we want to fetch tarballs])
 if test "$enable_fetch_external" != "no"; then
@@ -8841,8 +8830,8 @@ _ACEOF
         if ! $CXX $CXXFLAGS $CPPFLAGS $LINKFLAGSSHL -fPIC -fvisibility-inlines-hidden conftestlib1.cc -o libconftest1$DLLPOST >/dev/null 2>&5; then
             gccvisinlineshiddenok=no
         else
-            dnl At least Clang -fsanitize=address and -fsanitize=undefined are
-            dnl known to not work with -z defs (unsetting which makes the test
+            dnl At least Clang -fsanitize=address and -fsanitize=undefined (and no -shared-libsan)
+            dnl are known to not work with -z defs (unsetting which makes the test
             dnl moot, though):
             my_linkflagsnoundefs=$LINKFLAGSNOUNDEFS
             if test "$COM_IS_CLANG" = TRUE; then
@@ -8850,6 +8839,14 @@ _ACEOF
                     case $i in
                     -fsanitize=*)
                         my_linkflagsnoundefs=
+                        for i in $CXX $CXXFLAGS; do
+                            case $i in
+                            -shared-libsan)
+                                my_linkflagsnoundefs=$LINKFLAGSNOUNDEFS
+                                break
+                                ;;
+                            esac
+                        done
                         break
                         ;;
                     esac
@@ -8966,16 +8963,6 @@ if test "$COM_IS_CLANG" = "TRUE"; then
         compiler_plugins=test
     else
         compiler_plugins=no
-    fi
-    if test "$compiler_plugins" != no -a "$my_apple_clang" != yes; then
-        if test "$CLANGVER" -lt 120001; then
-            if test "$compiler_plugins" = yes; then
-                AC_MSG_ERROR(
-                    [Clang $CLANGVER is too old to build compiler plugins; need >= 12.0.1.])
-            else
-                compiler_plugins=no
-            fi
-        fi
     fi
     if test "$compiler_plugins" != "no"; then
         dnl The prefix where Clang resides, override to where Clang resides if
@@ -9589,6 +9576,17 @@ if test "$ENABLE_JAVA" != "" -a "$cross_compiling" != "yes"; then
     JDK_SECURITYMANAGER_DISALLOWED_FOR_BUILD=$JDK_SECURITYMANAGER_DISALLOWED
 fi
 
+if test -n "$JAVAINTERPRETER"; then
+    for i in $CXX $CXXFLAGS; do
+        case $i in
+        -shared-libsan)
+            JAVAINTERPRETER="env LD_PRELOAD=libclang_rt.asan.so $JAVAINTERPRETER"
+            break
+            ;;
+        esac
+    done
+fi
+
 AC_SUBST(JAVACFLAGS)
 AC_SUBST(JAVACOMPILER)
 AC_SUBST(JAVAINTERPRETER)
@@ -9681,6 +9679,31 @@ if test "$with_export_validation" != "no"; then
             OFFICEOTRON="bash.exe `cygpath -m "$OFFICEOTRON"`"
         else
             OFFICEOTRON="sh $OFFICEOTRON"
+        fi
+
+        AC_PATH_PROGS(VERAPDF, verapdf)
+        if test -z "$VERAPDF"; then
+            # remember to download the verapdf with validator later
+            AC_MSG_NOTICE([no verapdf found, will download it])
+            BUILD_TYPE="$BUILD_TYPE VERAPDF"
+            VERAPDF="$BUILDDIR/bin/verapdf.sh"
+
+            # and fetch name of verapdf jar name from download.lst
+            VERAPDF_JAR=`$SED -n -e "s/^VERAPDF_JAR *:= *\(.*\) */\1/p" $SRC_ROOT/download.lst`
+            AC_SUBST(VERAPDF_JAR)
+
+            if test -z "$VERAPDF_JAR"; then
+                AC_MSG_ERROR([cannot determine verapdf jar location (--with-export-validation)])
+            fi
+        fi
+        if test "$build_os" = "cygwin"; then
+            # In case of Cygwin it will be executed from Windows,
+            # so we need to run bash and absolute path to validator
+            # so instead of "odfvalidator" it will be
+            # something like "bash.exe C:\cygwin\opt\lo\bin\odfvalidator"
+            VERAPDF="bash.exe `cygpath -m "$VERAPDF"`"
+        else
+            VERAPDF="sh $VERAPDF"
         fi
     fi
     AC_SUBST(OFFICEOTRON)
@@ -16307,6 +16330,11 @@ if test -n "$WSL_ONLY_AS_HELPER"; then
     SRC_ROOT="$formatted_path"
     PathFormat "$BUILDDIR"
     BUILDDIR="$formatted_path"
+    # TARFILE_LOCATION and JAVAINTERPRETER are used in the validator scripts
+    PathFormat "$TARFILE_LOCATION"
+    TARFILE_LOCATION="$formatted_path"
+    PathFormat "$JAVAINTERPRETER"
+    JAVAINTERPRETER="$formatted_path"
     # git-bash has (gnu) tar, curl and sha256sum
     CURL="curl.exe"
     WGET=
@@ -16340,6 +16368,7 @@ AC_CONFIG_FILES([
                  bin/bffvalidator.sh
                  bin/odfvalidator.sh
                  bin/officeotron.sh
+                 bin/verapdf.sh
                  instsetoo_native/util/openoffice.lst
                  sysui/desktop/macosx/Info.plist
                  sysui/desktop/macosx/LaunchConstraint.plist

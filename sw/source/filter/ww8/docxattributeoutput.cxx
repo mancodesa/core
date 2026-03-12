@@ -149,6 +149,7 @@
 #include <com/sun/star/i18n/ScriptType.hpp>
 #include <com/sun/star/i18n/XBreakIterator.hpp>
 #include <com/sun/star/chart2/XChartDocument.hpp>
+#include <com/sun/star/chart2/XCoordinateSystemContainer.hpp>
 #include <com/sun/star/drawing/ShadingPattern.hpp>
 #include <com/sun/star/text/GraphicCrop.hpp>
 #include <com/sun/star/embed/EmbedStates.hpp>
@@ -5748,10 +5749,13 @@ void DocxAttributeOutput::FlyFrameGraphic( const SwGrfNode* pGrfNode, const Size
     m_pSerializer->startElementNS(XML_a, XML_xfrm, xFrameAttributes);
 
     m_pSerializer->singleElementNS(XML_a, XML_off, XML_x, "0", XML_y, "0");
-    // clamp to >=0, negative values are not valid here
-    OString aWidth( OString::number( std::max(sal_Int64(0), TwipsToEMU( aSize.Width() )) ) );
-    OString aHeight( OString::number( std::max(sal_Int64(0), TwipsToEMU( aSize.Height() )) ) );
-    m_pSerializer->singleElementNS(XML_a, XML_ext, XML_cx, aWidth, XML_cy, aHeight);
+
+    // MS Word reports the document as corrupt if not positive, Int32 value
+    const sal_Int32 nWidth = std::clamp<sal_Int64>(TwipsToEMU(aSize.Width()), 0, SAL_MAX_INT32);
+    const sal_Int32 nHeight = std::clamp<sal_Int64>(TwipsToEMU(aSize.Height()), 0, SAL_MAX_INT32);
+    m_pSerializer->singleElementNS(
+        XML_a, XML_ext, XML_cx, OString::number(nWidth), XML_cy, OString::number(nHeight));
+
     m_pSerializer->endElementNS( XML_a, XML_xfrm );
     m_pSerializer->startElementNS(XML_a, XML_prstGeom, XML_prst, "rect");
     m_pSerializer->singleElementNS(XML_a, XML_avLst);
@@ -5834,6 +5838,12 @@ void DocxAttributeOutput::WritePostponedChart()
 
         if( xChartDoc.is() )
         {
+            // At minimum, a PlotArea is needed or else MS Word complains about an invalid file
+            uno::Reference<chart2::XCoordinateSystemContainer>
+                xBCooSysCnt(xChartDoc->getFirstDiagram(), uno::UNO_QUERY);
+            if (!xBCooSysCnt.is())
+                continue;
+
             SAL_INFO("sw.ww8", "DocxAttributeOutput::WriteOLE2Obj: export chart ");
 
             m_rExport.SdrExporter().startDMLAnchorInline(rChart.frame, rChart.size);
@@ -6895,8 +6905,12 @@ void DocxAttributeOutput::pushToTableExportContext(DocxTableExportContext& rCont
     m_tableReference.m_nTableDepth = 0;
 
     rContext.m_bStartedParaSdt = m_aParagraphSdt.m_bStartedSdt;
+    rContext.m_oParaSdtPrToken = m_aParagraphSdt.m_oSdtPrToken;
+    rContext.m_vParaSdtBookmarkEnd = m_aParagraphSdt.m_vBookmarkEnd;
     m_aParagraphSdt.m_bStartedSdt = false;
+    m_aParagraphSdt.m_vBookmarkEnd.clear();
     rContext.m_bStartedRunSdt = m_aRunSdt.m_bStartedSdt;
+    // no need to save runSdt's SdtPrToken - it is never used once runSdt has started
     m_aRunSdt.m_bStartedSdt = false;
 
     rContext.m_nHyperLinkCount = m_nHyperLinkCount.back();
@@ -6909,6 +6923,8 @@ void DocxAttributeOutput::popFromTableExportContext(DocxTableExportContext const
     m_tableReference.m_bTableCellOpen = rContext.m_bTableCellOpen;
     m_tableReference.m_nTableDepth = rContext.m_nTableDepth;
     m_aParagraphSdt.m_bStartedSdt = rContext.m_bStartedParaSdt;
+    m_aParagraphSdt.m_oSdtPrToken = rContext.m_oParaSdtPrToken;
+    m_aParagraphSdt.m_vBookmarkEnd = rContext.m_vParaSdtBookmarkEnd;
     m_aRunSdt.m_bStartedSdt = rContext.m_bStartedRunSdt;
     m_nHyperLinkCount.back() = rContext.m_nHyperLinkCount;
 }
@@ -8858,6 +8874,7 @@ void DocxAttributeOutput::WritePendingPlaceholder()
         return;
     const SwField* pField = m_PendingPlaceholder;
     m_PendingPlaceholder = nullptr;
+    StartRedline(m_pRedlineData.back());
     m_pSerializer->startElementNS(XML_w, XML_sdt);
     m_pSerializer->startElementNS(XML_w, XML_sdtPr);
     if( !pField->GetPar2().isEmpty())
@@ -8872,6 +8889,7 @@ void DocxAttributeOutput::WritePendingPlaceholder()
     m_pSerializer->endElementNS( XML_w, XML_r );
     m_pSerializer->endElementNS( XML_w, XML_sdtContent );
     m_pSerializer->endElementNS( XML_w, XML_sdt );
+    EndRedline(m_pRedlineData.back());
 }
 
 void DocxAttributeOutput::SetField( const SwField& rField, ww::eField eType, const OUString& rCmd )

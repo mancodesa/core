@@ -250,12 +250,6 @@ $(eval $(call gb_Package_add_files_with_dir,odk_examples,$(SDKDIRNAME)/examples,
     DevelopersGuide/GUI/UnoMenu.java \
     DevelopersGuide/GUI/UnoMenu2.java \
     DevelopersGuide/GUI/oologo.gif \
-    DevelopersGuide/OfficeBean/Makefile \
-    DevelopersGuide/OfficeBean/OOoBeanViewer.java \
-    DevelopersGuide/OfficeBean/OfficeIconColor16.jpg \
-    DevelopersGuide/OfficeBean/OfficeIconColor32.jpg \
-    DevelopersGuide/OfficeBean/OfficeIconMono16.jpg \
-    DevelopersGuide/OfficeBean/OfficeIconMono32.jpg \
     DevelopersGuide/OfficeDev/Clipboard/java/Clipboard.java \
     DevelopersGuide/OfficeDev/Clipboard/java/ClipboardListener.java \
     DevelopersGuide/OfficeDev/Clipboard/java/ClipboardOwner.java \
@@ -441,11 +435,9 @@ $(eval $(call gb_Package_add_files_with_dir,odk_examples,$(SDKDIRNAME)/examples,
     cpp/Convertor/Convertor.cxx \
     cpp/Convertor/Makefile \
     cpp/Convertor/test.odt \
-    $(if $(filter-out $(OS),MACOSX), \
-        cpp/lokconvert/lokconvert.cxx \
-        cpp/lokconvert/Makefile \
-        cpp/lokconvert/test.odt \
-    ) \
+    cpp/lokconvert/lokconvert.cxx \
+    cpp/lokconvert/Makefile \
+    cpp/lokconvert/test.odt \
     cpp/Draw/Draw.cxx \
     cpp/Draw/Makefile \
     cpp/DocumentLoader/DocumentLoader.cxx \

@@ -77,6 +77,7 @@
 #include <osl/thread.h>
 #include <rtl/bootstrap.hxx>
 #include <rtl/strbuf.hxx>
+#include <rtl/ustrbuf.hxx>
 #include <rtl/uri.hxx>
 #include <svl/cryptosign.hxx>
 #include <linguistic/misc.hxx>
@@ -3869,21 +3870,41 @@ static int doc_saveAs(LibreOfficeKitDocument* pThis, const char* sUrl, const cha
         // saveAs() is more like save-a-copy, which allows saving to any
         // random format like PDF or PNG.
         // It is not a real filter option, so we have to filter it out.
-        const uno::Sequence<OUString> aOptionSeq = comphelper::string::convertCommaSeparated(aFilterOptions);
-        std::vector<OUString> aFilteredOptionVec;
+        // Preserve CSV filter options structure: don't drop empty tokens or add spaces.
+        // Just scan for and remove special non-filter keywords.
+        // (Using convertCommaSeparated() would drop empty tokens and add spaces,
+        // which breaks CSV filter options where token position matters.)
         bool bTakeOwnership = false;
         bool bCreateFromTemplate = false;
         MediaDescriptor aSaveMediaDescriptor;
-        for (const auto& rOption : aOptionSeq)
+        if (!aFilterOptions.startsWith("{"))
         {
-            if (rOption == "TakeOwnership")
-                bTakeOwnership = true;
-            else if (rOption == "NoFileSync")
-                aSaveMediaDescriptor[u"NoFileSync"_ustr] <<= true;
-            else if (rOption == "FromTemplate")
-                bCreateFromTemplate = true;
-            else
-                aFilteredOptionVec.push_back(rOption);
+            // Token-based filter options: scan for and remove special keywords.
+            // JSON options pass through unchanged — no keywords expected, and
+            // splitting on commas would needlessly mangle the JSON string.
+            OUStringBuffer aFilteredBuf;
+            sal_Int32 nIndex = 0;
+            bool bFirst = true;
+            do
+            {
+                const OUString aToken(o3tl::getToken(aFilterOptions, 0, ',', nIndex));
+                const OUString aTrimmed = aToken.trim();
+
+                if (aTrimmed == "TakeOwnership")
+                    bTakeOwnership = true;
+                else if (aTrimmed == "NoFileSync")
+                    aSaveMediaDescriptor[u"NoFileSync"_ustr] <<= true;
+                else if (aTrimmed == "FromTemplate")
+                    bCreateFromTemplate = true;
+                else
+                {
+                    if (!bFirst)
+                        aFilteredBuf.append(u',');
+                    aFilteredBuf.append(aToken);
+                    bFirst = false;
+                }
+            } while (nIndex >= 0);
+            aFilterOptions = aFilteredBuf.makeStringAndClear();
         }
 
         if (bCreateFromTemplate && bTakeOwnership)
@@ -3898,8 +3919,6 @@ static int doc_saveAs(LibreOfficeKitDocument* pThis, const char* sUrl, const cha
         aSaveMediaDescriptor[u"Overwrite"_ustr] <<= true;
         aSaveMediaDescriptor[u"FilterName"_ustr] <<= aFilterName;
 
-        auto aFilteredOptionSeq = comphelper::containerToSequence<OUString>(aFilteredOptionVec);
-        aFilterOptions = comphelper::string::convertCommaSeparated(aFilteredOptionSeq);
         aSaveMediaDescriptor[MediaDescriptor::PROP_FILTEROPTIONS] <<= aFilterOptions;
 
         comphelper::SequenceAsHashMap aFilterDataMap;
@@ -8479,6 +8498,9 @@ static int lo_initialize(LibreOfficeKit* pThis, const char* pAppPath, const char
 
     if (const char* pHostExemptVerifyHost = ::getenv("LOK_HOST_ALLOWLIST_EXEMPT_VERIFY_HOST"))
         HostFilter::setAllowedHostsExemptVerifyHost(strncmp(pHostExemptVerifyHost,"1", 1) == 0);
+
+    if (const char* pExtRefPaths = ::getenv("LOK_ALLOWED_EXTREF_PATHS"))
+        HostFilter::setAllowedExtRefPaths(pExtRefPaths);
 
     // What stage are we at ?
     if (pThis == nullptr)

@@ -220,6 +220,10 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf169101_datePicker)
     // there is no valid date, so fullDate must not be provided (or MS Word says 'corrupt file')
     assertXPathNoAttribute(pXmlDoc, "//w:sdt/w:sdtPr/w:date", "fullDate");
     assertXPathContent(pXmlDoc, "//w:sdt/w:sdtContent/w:r/w:t", u"Week #");
+
+    // if the relationship is missing, then MS Word shows placeholder text instead of customXml date
+    xmlDocUniquePtr pXmlCustomXmlRels = parseExport(u"customXml/_rels/item1.xml.rels"_ustr);
+    assertXPath(pXmlCustomXmlRels, "//rels:Relationship", "Target", u"itemProps1.xml");
 }
 
 CPPUNIT_TEST_FIXTURE(Test, testTdf170389_manyTabstops)
@@ -250,6 +254,15 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf170602_checkbox_bookmarkEnd)
     xmlDocUniquePtr pXmlDoc = parseExport(u"word/document.xml"_ustr);
     // MS Word reports document as corrupt if a plainText blockSdt contains a bookmarkEnd
     assertXPath(pXmlDoc, "//w:body/w:tbl/w:tr[2]/w:tc[1]/w:bookmarkEnd", 1); // Tempestades
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf170602_exportContext)
+{
+    // given a document where both the body text and the interrupting header stream contain an sdt
+    createSwDoc("tdf170602_exportContext.docx");
+
+    // without the fix, the document would crash on save, b/c m_oSdtPrToken wasn't preserved
+    save(TestFilter::DOCX);
 }
 
 CPPUNIT_TEST_FIXTURE(Test, testInvalidDatetimeInProps)
@@ -362,6 +375,20 @@ CPPUNIT_TEST_FIXTURE(Test, testTdf170908_delText)
 
     // The text should be in a separate (preceding) run from the floating stuff
     CPPUNIT_ASSERT_GREATER(nRunsBeforeDelText, nRunsBeforeAnchor);
+}
+
+CPPUNIT_TEST_FIXTURE(Test, testTdf170908_delText_sdt)
+{
+    // Given a document with a deleted, exported-with-WritePendingPlaceholder sdt
+
+    createSwDoc("tdf170908_delText_sdt.odt");
+
+    save(TestFilter::DOCX);
+
+    xmlDocUniquePtr pXmlDoc = parseExport(u"word/document.xml"_ustr);
+    // delText must be inside a w:del or MS Word considers the document to be corrupt
+    assertXPath(pXmlDoc, "//w:delText", 1); // there is only one delTree element
+    assertXPath(pXmlDoc, "//w:del/w:sdt/w:sdtContent/w:r/w:delText", 1); // the whole sdt is deleted
 }
 
 CPPUNIT_TEST_FIXTURE(Test, testTdf170952_delText)

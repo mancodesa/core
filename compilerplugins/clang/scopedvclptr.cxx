@@ -7,11 +7,13 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  */
 
+#ifndef LO_CLANG_SHARED_PLUGINS
+
+#include <cassert>
 #include <string>
 
 #include "check.hxx"
 #include "plugin.hxx"
-#include "config_clang.h"
 
 /**
  * Two checks to prevent GDI handle leaks on Windows:
@@ -145,21 +147,15 @@ static bool containsVclPtrCreate(const Stmt* pStmt)
 // plugin
 // ---------------------------------------------------------------------------
 
-class ScopedVclPtrCheck : public loplugin::FilteringPlugin<ScopedVclPtrCheck>
+class ScopedVclPtr : public loplugin::FilteringPlugin<ScopedVclPtr>
 {
 public:
-    explicit ScopedVclPtrCheck(loplugin::InstantiationData const& data)
+    explicit ScopedVclPtr(loplugin::InstantiationData const& data)
         : FilteringPlugin(data)
     {
     }
 
-    virtual bool preRun() override
-    {
-        StringRef fn(handler.getMainFileName());
-        if (loplugin::isSamePathname(fn, SRCDIR "/include/vcl/vclptr.hxx"))
-            return false;
-        return true;
-    }
+    virtual bool preRun() override { return compiler.getLangOpts().CPlusPlus; }
 
     virtual void run() override
     {
@@ -174,35 +170,39 @@ private:
     bool isVclPtrToVirtualDevice(QualType qType);
 };
 
-bool ScopedVclPtrCheck::isVclPtrToVirtualDevice(QualType qType)
+bool ScopedVclPtr::isVclPtrToVirtualDevice(QualType qType)
 {
     auto check = loplugin::TypeCheck(qType);
-    if (!check.Class("VclPtr").GlobalNamespace())
+    if (!check.TemplateSpecializationClass().Class("VclPtr").GlobalNamespace())
         return false;
 
-    const clang::Type* pType = qType.getTypePtr();
-    if (!pType)
-        return false;
+    const auto* pTemplate = qType->getAs<TemplateSpecializationType>();
+    assert(pTemplate != nullptr);
 
-    const CXXRecordDecl* pRecordDecl = pType->getAsCXXRecordDecl();
-    if (!pRecordDecl)
+    auto const args = pTemplate->template_arguments();
+    if (args.size() < 1)
+    {
+        if (isDebugMode())
+        {
+            report(DiagnosticsEngine::Fatal, "Unexpected VclPtr specialization");
+        }
         return false;
+    }
 
-    const auto* pTemplate = dyn_cast<ClassTemplateSpecializationDecl>(pRecordDecl);
-    if (!pTemplate)
-        return false;
-
-    if (pTemplate->getTemplateArgs().size() < 1)
-        return false;
-
-    const TemplateArgument& rArg = pTemplate->getTemplateArgs()[0];
+    const TemplateArgument& rArg = args[0];
     if (rArg.getKind() != TemplateArgument::ArgKind::Type)
+    {
+        if (isDebugMode())
+        {
+            report(DiagnosticsEngine::Fatal, "Unexpected VclPtr specialization");
+        }
         return false;
+    }
 
     return bool(loplugin::TypeCheck(rArg.getAsType()).Class("VirtualDevice").GlobalNamespace());
 }
 
-bool ScopedVclPtrCheck::VisitVarDecl(const VarDecl* pVarDecl)
+bool ScopedVclPtr::VisitVarDecl(const VarDecl* pVarDecl)
 {
     if (ignoreLocation(pVarDecl))
         return true;
@@ -243,15 +243,14 @@ bool ScopedVclPtrCheck::VisitVarDecl(const VarDecl* pVarDecl)
 
     report(DiagnosticsEngine::Warning,
            "use ScopedVclPtr<VirtualDevice> instead of VclPtr<VirtualDevice>"
-           " for local variables to prevent GDI handle leaks"
-           " [loplugin:scopedvclptr]",
+           " for local variables to prevent GDI handle leaks",
            pVarDecl->getLocation())
         << pVarDecl->getSourceRange();
 
     return true;
 }
 
-bool ScopedVclPtrCheck::VisitFunctionDecl(const FunctionDecl* pFuncDecl)
+bool ScopedVclPtr::VisitFunctionDecl(const FunctionDecl* pFuncDecl)
 {
     if (ignoreLocation(pFuncDecl))
         return true;
@@ -267,16 +266,17 @@ bool ScopedVclPtrCheck::VisitFunctionDecl(const FunctionDecl* pFuncDecl)
 
     report(DiagnosticsEngine::Warning,
            "use ScopedVclPtr<VirtualDevice> as return type instead of"
-           " VclPtr<VirtualDevice> to prevent GDI handle leaks"
-           " [loplugin:scopedvclptr]",
+           " VclPtr<VirtualDevice> to prevent GDI handle leaks",
            pFuncDecl->getLocation())
         << pFuncDecl->getSourceRange();
 
     return true;
 }
 
-loplugin::Plugin::Registration<ScopedVclPtrCheck> scopedvclptr("scopedvclptr");
+loplugin::Plugin::Registration<ScopedVclPtr> scopedvclptr("scopedvclptr");
 
 } // namespace
+
+#endif
 
 /* vim:set shiftwidth=4 softtabstop=4 expandtab: */

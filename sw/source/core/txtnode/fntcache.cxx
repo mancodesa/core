@@ -1528,9 +1528,11 @@ void SwFntObj::DrawText( SwDrawTextInfo &rInf )
 
         TextFrameIndex nCnt(rInf.GetText().getLength());
         if ( nCnt < rInf.GetIdx() )
-            assert(false); // layout bug, not handled below
-        else
-            nCnt = nCnt - rInf.GetIdx();
+        {
+            assert(false); // layout bug
+            return;
+        }
+        nCnt = nCnt - rInf.GetIdx();
         nCnt = std::min(nCnt, rInf.GetLen());
         sal_Unicode cChPrev = rInf.GetText()[sal_Int32(rInf.GetIdx())];
 
@@ -2299,7 +2301,7 @@ TextFrameIndex SwFont::GetTextBreak(SwDrawTextInfo const & rInf, tools::Long nTe
     if (GetCaseMap() == SvxCaseMap::SmallCaps && TextFrameIndex(COMPLETE_STRING) == nTextBreak2 &&
         ! bCompress && nTextWidth == 0)
         // If nTextWidth == 0 means the line is full, we have to break it
-        nTextBreak2 = TextFrameIndex(1);
+        nTextBreak2 = rInf.GetIdx();
 
     if ( ! bCompress )
         return nTextBreak2;
