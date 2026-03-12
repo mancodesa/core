@@ -1,12 +1,15 @@
-[submodule "dictionaries"]
-	path = dictionaries
-	url = ../dictionaries
-	branch = .
+# [submodule "dictionaries"]
+# 	path = dictionaries
+# 	url = ../dictionaries
+# 	branch = .
+#     shallow = true
 [submodule "helpcontent2"]
-	path = helpcontent2
-	url = ../help
-	branch = .
-[submodule "translations"]
-	path = translations
-	url = ../translations
-	branch = .
+ 	path = helpcontent2
+ 	url = ../help
+ 	branch = .
+  shallow = true
+# [submodule "translations"]
+# 	path = translations
+# 	url = ../translations
+# 	branch = .
+#     shallow = true
