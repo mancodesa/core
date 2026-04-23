@@ -221,7 +221,7 @@ public:
     void testMultiViewTableSelection();
     void testColorPaletteCallback();
     void testABI();
-
+    void testStartURP();
     CPPUNIT_TEST_SUITE(DesktopLOKTest);
     CPPUNIT_TEST(testGetStyles);
     CPPUNIT_TEST(testGetFonts);
@@ -303,6 +303,7 @@ public:
     CPPUNIT_TEST(testMultiViewTableSelection);
     CPPUNIT_TEST(testColorPaletteCallback);
     CPPUNIT_TEST(testABI);
+    CPPUNIT_TEST(testStartURP);
     CPPUNIT_TEST_SUITE_END();
 
     OString m_aTextSelection;
@@ -4336,6 +4337,72 @@ void DesktopLOKTest::testABI()
     CPPUNIT_ASSERT_EQUAL(documentClassOffset(81), sizeof(LibreOfficeKitDocumentClass));
 }
 
+void DesktopLOKTest::testStartURP()
+{
+    const char* loPath = std::getenv("LO_PATH");
+    if (!loPath)
+        loPath = "/usr/lib/libreoffice/program";
+
+    LibreOfficeKit* pOffice = lok_init(loPath);
+    CPPUNIT_ASSERT_MESSAGE("Failed to initialize LibreOfficeKit", pOffice != nullptr);
+
+    int URPfromLoFDs[2];
+    int URPtoLoFDs[2];
+
+    CPPUNIT_ASSERT_MESSAGE("Failed to create URPfromLoFDs pipe", pipe(URPfromLoFDs) == 0);
+    CPPUNIT_ASSERT_MESSAGE("Failed to create URPtoLoFDs pipe", pipe(URPtoLoFDs) == 0);
+
+    auto readFromLO = [](void* pContext, const signed char* pBuffer, int nSize) -> int {
+        if (!pContext || !pBuffer || nSize <= 0)
+            return -1;
+        int fd = static_cast<int>(reinterpret_cast<intptr_t>(pContext));
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags != -1)
+            fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        int result = read(fd, const_cast<signed char*>(pBuffer), nSize);
+        if (result == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            return 0;
+        return result;
+    };
+
+    auto writeToLO = [](void* pContext, signed char* pBuffer, int nSize) -> int {
+        if (!pContext || !pBuffer || nSize <= 0)
+            return -1;
+        int fd = static_cast<int>(reinterpret_cast<intptr_t>(pContext));
+        int flags = fcntl(fd, F_GETFL, 0);
+        if (flags != -1)
+            fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+        int result = write(fd, pBuffer, nSize);
+        if (result == -1 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            return 0;
+        return result;
+    };
+
+    void* pURPContext = pOffice->pClass->startURP(
+        pOffice,
+        reinterpret_cast<void*>(static_cast<intptr_t>(URPtoLoFDs[0])),
+        reinterpret_cast<void*>(static_cast<intptr_t>(URPfromLoFDs[1])),
+        readFromLO,
+        writeToLO
+    );
+
+    CPPUNIT_ASSERT_MESSAGE("startURP returned null context", pURPContext != nullptr);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+
+    if (pURPContext != nullptr)
+    {
+        pOffice->pClass->stopURP(pOffice, pURPContext);
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    }
+
+    if (URPfromLoFDs[0] != -1) close(URPfromLoFDs[0]);
+    if (URPfromLoFDs[1] != -1) close(URPfromLoFDs[1]);
+    if (URPtoLoFDs[0] != -1) close(URPtoLoFDs[0]);
+    if (URPtoLoFDs[1] != -1) close(URPtoLoFDs[1]);
+
+    pOffice->pClass->destroy(pOffice);
+}
 CPPUNIT_TEST_SUITE_REGISTRATION(DesktopLOKTest);
 
 CPPUNIT_PLUGIN_IMPLEMENT();
