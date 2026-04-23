@@ -221,7 +221,7 @@ public:
     void testMultiViewTableSelection();
     void testColorPaletteCallback();
     void testABI();
-
+    void testSetView();
     CPPUNIT_TEST_SUITE(DesktopLOKTest);
     CPPUNIT_TEST(testGetStyles);
     CPPUNIT_TEST(testGetFonts);
@@ -303,6 +303,7 @@ public:
     CPPUNIT_TEST(testMultiViewTableSelection);
     CPPUNIT_TEST(testColorPaletteCallback);
     CPPUNIT_TEST(testABI);
+    CPPUNIT_TEST(testSetView);
     CPPUNIT_TEST_SUITE_END();
 
     OString m_aTextSelection;
@@ -4336,6 +4337,46 @@ void DesktopLOKTest::testABI()
     CPPUNIT_ASSERT_EQUAL(documentClassOffset(81), sizeof(LibreOfficeKitDocumentClass));
 }
 
+void DesktopLOKTest::testSetView()
+{
+    LibreOfficeKitDocument* pDocument = loadDocUrl(u"blank_text.odt");
+    CPPUNIT_ASSERT(pDocument);
+
+    // Get initial view count
+    int initialViewCount = pDocument->pClass->getViewsCount(pDocument);
+    CPPUNIT_ASSERT_MESSAGE("Initial view count should be at least 1", initialViewCount >= 1);
+
+    // Create an additional view
+    int newViewId = pDocument->pClass->createView(pDocument);
+    CPPUNIT_ASSERT_MESSAGE("Failed to create new view", newViewId >= 0);
+
+    // Set view to view ID 0
+    pDocument->pClass->setView(pDocument, 0);
+
+    // Verify the view was set correctly
+    int viewAfterSet = pDocument->pClass->getView(pDocument);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("setView(0) failed", 0, viewAfterSet);
+
+    // Set view to the newly created view
+    pDocument->pClass->setView(pDocument, newViewId);
+
+    // Verify the view was set correctly
+    int viewAfterSet2 = pDocument->pClass->getView(pDocument);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("setView(newViewId) failed", newViewId, viewAfterSet2);
+
+    // Get view count after creating view
+    int viewCountAfterCreate = pDocument->pClass->getViewsCount(pDocument);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("View count should increase by 1", initialViewCount + 1, viewCountAfterCreate);
+
+    // Destroy the newly created view
+    pDocument->pClass->destroyView(pDocument, newViewId);
+
+    // Get final view count
+    int finalViewCount = pDocument->pClass->getViewsCount(pDocument);
+    CPPUNIT_ASSERT_EQUAL_MESSAGE("View count should return to initial", initialViewCount, finalViewCount);
+}
+
+CPPUNIT_TEST_SUITE_REGISTRATION(DesktopLOKTest);
 CPPUNIT_TEST_SUITE_REGISTRATION(DesktopLOKTest);
 
 CPPUNIT_PLUGIN_IMPLEMENT();
