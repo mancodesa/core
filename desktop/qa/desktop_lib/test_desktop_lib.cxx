@@ -221,7 +221,8 @@ public:
     void testMultiViewTableSelection();
     void testColorPaletteCallback();
     void testABI();
-
+    void testLokCallbackTypeToString();
+    void testJoinThreads();
     CPPUNIT_TEST_SUITE(DesktopLOKTest);
     CPPUNIT_TEST(testGetStyles);
     CPPUNIT_TEST(testGetFonts);
@@ -303,6 +304,8 @@ public:
     CPPUNIT_TEST(testMultiViewTableSelection);
     CPPUNIT_TEST(testColorPaletteCallback);
     CPPUNIT_TEST(testABI);
+    CPPUNIT_TEST(testLokCallbackTypeToString);
+    CPPUNIT_TEST(testJoinThreads);
     CPPUNIT_TEST_SUITE_END();
 
     OString m_aTextSelection;
@@ -4336,6 +4339,39 @@ void DesktopLOKTest::testABI()
     CPPUNIT_ASSERT_EQUAL(documentClassOffset(81), sizeof(LibreOfficeKitDocumentClass));
 }
 
+void DesktopLOKTest::testLokCallbackTypeToString()
+{
+    const char* result1 = lokCallbackTypeToString(LOK_CALLBACK_INVALIDATE_TILES);
+    CPPUNIT_ASSERT_MESSAGE("First call returned NULL", result1 != nullptr);
+    CPPUNIT_ASSERT_MESSAGE("Unexpected result for LOK_CALLBACK_INVALIDATE_TILES", 
+                           strcmp(result1, "LOK_CALLBACK_INVALIDATE_TILES") == 0);
+
+    const char* result2 = lokCallbackTypeToString(LOK_CALLBACK_DOCUMENT_SIZE_CHANGED);
+    CPPUNIT_ASSERT_MESSAGE("Second call returned NULL", result2 != nullptr);
+    CPPUNIT_ASSERT_MESSAGE("Unexpected result for LOK_CALLBACK_DOCUMENT_SIZE_CHANGED", 
+                           strcmp(result2, "LOK_CALLBACK_DOCUMENT_SIZE_CHANGED") == 0);
+}
+
+void DesktopLOKTest::testJoinThreads()
+{
+    const char* loPath = std::getenv("LO_PATH");
+    
+    if (!loPath)
+    {
+        loPath = "/usr/lib/libreoffice/program";
+    }
+
+    LibreOfficeKit* loKit = lok_init(loPath);
+    CPPUNIT_ASSERT_MESSAGE("Failed to initialize LibreOfficeKit", loKit != nullptr);
+
+    if (loKit)
+    {
+        loKit->pClass->startThreads(loKit);
+        bool joinResult = loKit->pClass->joinThreads(loKit);
+        CPPUNIT_ASSERT_MESSAGE("lok::Office::joinThreads failed to execute correctly", joinResult);
+        loKit->pClass->destroy(loKit);
+    }
+}
 CPPUNIT_TEST_SUITE_REGISTRATION(DesktopLOKTest);
 
 CPPUNIT_PLUGIN_IMPLEMENT();
